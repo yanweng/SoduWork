@@ -196,7 +196,18 @@ async function main() {
   if (actual !== item.sha256) fail('SHA-256 mismatch: expected ' + item.sha256 + ', got ' + actual);
 
   ensureInside(runtimeRoot, clientRoot);
-  fs.rmSync(runtimeRoot, { recursive: true, force: true });
+ try {
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  } catch (error) {
+    // Windows: PortableGit ships etc/mtab as an APPEXECLINK reparse point
+    // pointing at /proc/mounts. rimraf cannot unlink it (EPERM), which would
+    // permanently wedge restarts after any interrupted run. Move the stale
+    // runtime aside instead of failing the whole preparation.
+    const stale = runtimeRoot + '.stale-' + Date.now();
+    console.log('[SoduWork shell runtime] cannot remove stale runtime (' +
+      String(error && error.code || error) + '); renaming it to ' + path.basename(stale));
+    fs.renameSync(runtimeRoot, stale);
+  }
   fs.mkdirSync(runtimeRoot, { recursive: true });
   const extracted = spawnSync(archive, ['-y', '-o' + runtimeRoot], {
     cwd: clientRoot, encoding: 'utf8', timeout: 10 * 60 * 1000, windowsHide: true,
